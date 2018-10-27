@@ -5,6 +5,8 @@ import android.util.Log;
 
 import com.pino.pino.DisplayDriver;
 
+import java.nio.IntBuffer;
+
 public class DisplayPanel extends DisplayDriver {
 
     private static final String TAG = "Pino.DisplayPanel";
@@ -20,6 +22,16 @@ public class DisplayPanel extends DisplayDriver {
         mContext = context;
         initPixelOffset();
         initUsb();
+
+    }
+
+    public void render() {
+        if (mScreenBuffer != null) {
+            mScreenBuffer.rewind();
+            mBitmap.copyPixelsToBuffer(mScreenBuffer);
+        }
+        update();
+        flush2Board();
     }
 
     // Convert from xy to buffer memory
@@ -69,7 +81,7 @@ public class DisplayPanel extends DisplayDriver {
             int elapsedTime = (int) (java.lang.System.currentTimeMillis() - lastFlushTime);
             lastFlushTime = java.lang.System.currentTimeMillis();
 
-            Log.d(TAG, "Framerate: " + flushCnt + " frames in " + elapsedTime + ", " +
+            Log.d(TAG, "Frame-rate: " + flushCnt + " frames in " + elapsedTime + ", " +
                     (flushCnt * 1000 / elapsedTime) + " frames/sec");
             flushCnt = 0;
         }
@@ -131,7 +143,7 @@ public class DisplayPanel extends DisplayDriver {
                     (mDimmerLevel * pixels[pixel]) / 255;
         }
 
-        // Do color correction on burner board display pixels
+        // Do color correction on display pixels if needed
         byte [] newPixels = new byte[mScreenWidth * 3];
         for (int pixel = 0; pixel < mScreenWidth * 3; pixel = pixel + 3) {
             newPixels[pixel] = (byte)pixelColorCorrectionRed(dimPixels[pixel]);
@@ -155,21 +167,6 @@ public class DisplayPanel extends DisplayDriver {
     }
 
     boolean haveUpdated = false;
-    public void setMsg(String msg) {
-        //l("sendCommand: 10,n,...");
-        synchronized (mSerialConn) {
-            if (mListener != null) {
-                mListener.sendCmdStart(13);
-                mListener.sendCmdArg(msg);
-                mListener.sendCmdEnd();
-            }
-            if (!haveUpdated) {
-                haveUpdated = true;
-                update();
-            }
-            flush2Board();
-        }
-    }
 
 
     //    cmdMessenger.attach(BBUpdate, OnUpdate);              // 6
@@ -182,7 +179,7 @@ public class DisplayPanel extends DisplayDriver {
                 mListener.sendCmdEnd();
                 return true;
             } else {
-                // Emulate board's 30ms refresh time
+                // Emulate board's 5ms refresh time
                 try {
                     Thread.sleep(5);
                 } catch (Throwable e) {

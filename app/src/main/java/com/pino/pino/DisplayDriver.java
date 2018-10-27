@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
@@ -17,10 +19,17 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager;
 
 import java.io.IOException;
 import java.nio.Buffer;
+import java.nio.IntBuffer;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+
+/*
+ * Simple display head for multiple Pino displays
+ * Allows drawing on standard Android Canvas with Android API and render canvas to display
+ * Call DisplayDriver.render() to render on display.
+ */
 public class DisplayDriver {
 
     private static final String TAG = "Pino.Display";
@@ -40,6 +49,10 @@ public class DisplayDriver {
     private UsbDevice mUsbDevice = null;
     protected static final String GET_USB_PERMISSION = "GetUsbPermission";
 
+    Canvas mCanvas = new Canvas();
+    Bitmap mBitmap;
+    public IntBuffer mScreenBuffer = null;
+
     public DisplayDriver(Context context, int width, int height) {
         mContext = context;
         // Register to receive attach/detached messages that are proxied from MainActivity
@@ -47,6 +60,27 @@ public class DisplayDriver {
         mContext.registerReceiver(mUsbReceiver, filter);
         filter = new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_ATTACHED);
         mContext.registerReceiver(mUsbReceiver, filter);
+
+        // Setup bitmap behind canvas
+        mBitmap = Bitmap.createBitmap(mScreenWidth, mScreenHeight, Bitmap.Config.ARGB_8888);
+        mCanvas.setBitmap(mBitmap);
+        mScreenBuffer = IntBuffer.allocate(width * height);
+
+    }
+
+    public Canvas getCanvas() {
+        return mCanvas;
+    }
+
+    public int getScreenWidth() {
+        return mScreenWidth;
+    }
+
+    public int getScreenHeight() {
+        return mScreenHeight;
+    }
+
+    public void render() {
     }
 
     private boolean checkUsbDevice(UsbDevice device) {
