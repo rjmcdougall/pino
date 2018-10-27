@@ -46,6 +46,26 @@ public class MainActivity extends Activity {
         mDisplay.render();
     }
 
+    // A simple demo function to draw using graphics primitives
+    private void drawTestGraphic() {
+        if (mDisplay == null) {
+            return;
+        }
+        Canvas canvas = mDisplay.getCanvas();
+        Paint arcPaint = new Paint();
+        arcPaint.setColor(Color.BLUE); //  Color
+        arcPaint.setStrokeWidth(1);
+        arcPaint.setStyle(Paint.Style.STROKE);
+        int left = 0;
+        int top = mDisplay.mScreenWidth;
+        int right = mDisplay.mScreenHeight;
+        int bottom = 0;
+        int startAngle = 90;
+        int sweepAngle = 270;
+        boolean useCenter = true;
+        canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter, arcPaint);
+    }
+
     // A simple demo function to write text
     private static final int kTextSize = 12;
     private void drawHello() {
