@@ -25,10 +25,13 @@ public class DisplayDriver {
 
     private static final String TAG = "Pino.Display";
     Context mContext;
+
     public int[] mOutputScreen;
     public int mScreenWidth = 1;
     public int mScreenHeight = 1;
+    public String mScreenType;
     public CmdMessenger mListener = null;
+
     private SerialInputOutputManager mSerialIoManager;
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     protected final Object mSerialConn = new Object();
@@ -37,14 +40,13 @@ public class DisplayDriver {
     private UsbDevice mUsbDevice = null;
     protected static final String GET_USB_PERMISSION = "GetUsbPermission";
 
-    public Display(Context context) {
+    public DisplayDriver(Context context, int width, int height) {
         mContext = context;
         // Register to receive attach/detached messages that are proxied from MainActivity
         IntentFilter filter = new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED);
         mContext.registerReceiver(mUsbReceiver, filter);
         filter = new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_ATTACHED);
         mContext.registerReceiver(mUsbReceiver, filter);
-
     }
 
     private boolean checkUsbDevice(UsbDevice device) {
