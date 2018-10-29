@@ -49,12 +49,14 @@ public class DisplayDriver {
     private UsbDevice mUsbDevice = null;
     protected static final String GET_USB_PERMISSION = "GetUsbPermission";
 
-    Canvas mCanvas = new Canvas();
+    Canvas mCanvas;
     Bitmap mBitmap;
     public IntBuffer mScreenBuffer = null;
 
     public DisplayDriver(Context context, int width, int height) {
         mContext = context;
+        mScreenWidth = width;
+        mScreenHeight = height;
         // Register to receive attach/detached messages that are proxied from MainActivity
         IntentFilter filter = new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED);
         mContext.registerReceiver(mUsbReceiver, filter);
@@ -62,6 +64,7 @@ public class DisplayDriver {
         mContext.registerReceiver(mUsbReceiver, filter);
 
         // Setup bitmap behind canvas
+        mCanvas = new Canvas();
         mBitmap = Bitmap.createBitmap(mScreenWidth, mScreenHeight, Bitmap.Config.ARGB_8888);
         mCanvas.setBitmap(mBitmap);
         mScreenBuffer = IntBuffer.allocate(width * height);
@@ -119,7 +122,7 @@ public class DisplayDriver {
         IntentFilter filter = new IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED);
         mContext.registerReceiver(mUsbReceiver, filter);
 
-        // Find the Radio device by pid/vid
+        // Find the display device by pid/vid
         mUsbDevice = null;
         for (int i = 0; i < availableDrivers.size(); i++) {
             mDriver = availableDrivers.get(i);

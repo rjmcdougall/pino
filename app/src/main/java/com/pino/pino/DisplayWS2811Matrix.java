@@ -3,16 +3,12 @@ package com.pino.pino;
 import android.content.Context;
 import android.util.Log;
 
-import com.pino.pino.DisplayDriver;
-
-import java.nio.IntBuffer;
-
-public class DisplayPanel extends DisplayDriver {
+public class DisplayWS2811Matrix extends DisplayDriver {
 
     private static final String TAG = "Pino.DisplayPanel";
     private int mDimmerLevel = 255;
 
-    public DisplayPanel(Context context, int width, int height) {
+    public DisplayWS2811Matrix(Context context, int width, int height) {
         super(context, width, height);
         mScreenWidth = width;
         mScreenHeight = height;
@@ -21,8 +17,8 @@ public class DisplayPanel extends DisplayDriver {
         mOutputScreen = new int[mScreenWidth * mScreenHeight * 3];
         mContext = context;
         initPixelOffset();
+        initpixelMap2Board();
         initUsb();
-
     }
 
     public void render() {
@@ -31,6 +27,8 @@ public class DisplayPanel extends DisplayDriver {
             mBitmap.copyPixelsToBuffer(mScreenBuffer);
         }
         aRGBtoBoardScreen(mScreenBuffer, mOutputScreen);
+        //Log.d(TAG, "render mScreenBuffer:" + mScreenBuffer + "," + Util.intToHex(mScreenBuffer.array()));
+        //Log.d(TAG, "render mScreenBuffer:" + mOutputScreen + "," + Util.intToHex(mOutputScreen));
         flush();
     }
 
@@ -72,7 +70,7 @@ public class DisplayPanel extends DisplayDriver {
     }
 
     private int flushCnt = 0;
-    long lastFlushTime = java.lang.System.currentTimeMillis();
+    long lastFlushTime = System.currentTimeMillis();
 
     public void flush() {
 
@@ -81,11 +79,10 @@ public class DisplayPanel extends DisplayDriver {
             int elapsedTime = (int) (java.lang.System.currentTimeMillis() - lastFlushTime);
             lastFlushTime = java.lang.System.currentTimeMillis();
 
-            Log.d(TAG, "Frame-rate: " + flushCnt + " frames in " + elapsedTime + ", " +
+            Log.d(TAG, "Framerate: " + flushCnt + " frames in " + elapsedTime + ", " +
                     (flushCnt * 1000 / elapsedTime) + " frames/sec");
             flushCnt = 0;
         }
-
 
 
         // Here we calculate the total power percentage of the whole board
@@ -99,75 +96,88 @@ public class DisplayPanel extends DisplayDriver {
         int totalBrightnessSum = 0;
         int powerLimitMultiplierPercent = 100;
         for (int pixel = 0; pixel < mOutputScreen.length; pixel++) {
-
-            if (pixel % 3 == 0) { // R
+            // R
+            if (pixel % 3 == 0) {
                 totalBrightnessSum += mOutputScreen[pixel];
-
-            } else if (pixel % 3 == 1) { // G
+            } else if (pixel % 3 == 1) {
                 totalBrightnessSum += mOutputScreen[pixel];
-            } else { //B
+            } else {
                 totalBrightnessSum += mOutputScreen[pixel] / 2;
             }
         }
 
         final int powerPercent = totalBrightnessSum / mOutputScreen.length * 100 / 255;
-        powerLimitMultiplierPercent = 100 - java.lang.Math.max(powerPercent - 15, 0);
+        //powerLimitMultiplierPercent = 100 - java.lang.Math.max(powerPercent - 12, 0);
+        powerLimitMultiplierPercent = 10;
 
-        int[] rowPixels = new int[mScreenWidth * 3];
-        for (int y = 0; y < mScreenHeight; y++) {
-            //for (int y = 30; y < 31; y++) {
-            for (int x = 0; x < mScreenWidth; x++) {
-                if (y < mScreenHeight) {
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 0] =
-                            mOutputScreen[pixel2Offset(x, y, PIXEL_RED)];
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 1] =
-                            mOutputScreen[pixel2Offset(x, y, PIXEL_GREEN)];
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 2] =
-                            mOutputScreen[pixel2Offset(x, y, PIXEL_BLUE)];
-                }
+        // Walk through each strip and fill from the graphics buffer
+        for (int s = 0; s < kStrips; s++) {
+            int[] stripPixels = new int[mScreenHeight * kColumsPerStrip * 3];
+            // Walk through all the pixels in the strip
+            //Log.d(TAG, "pixelmap2boatdtable :" + s + "," + Util.intToHex(pixelMap2BoardTable[s]));
+
+            for (int offset = 0; offset < mScreenHeight * kColumsPerStrip * 3; ) {
+                stripPixels[offset] = mOutputScreen[pixelMap2BoardTable[s][offset++]];
+                stripPixels[offset] = mOutputScreen[pixelMap2BoardTable[s][offset++]];
+                stripPixels[offset] = mOutputScreen[pixelMap2BoardTable[s][offset++]];
             }
-            //setRowVisual(y, rowPixels);
-            setRow(y, rowPixels);
+            setStrip(s, stripPixels, powerLimitMultiplierPercent);
+            // Send to board
+            flush2Board();
         }
 
+
+        // Render on board
         update();
         flush2Board();
 
     }
 
-    private boolean setRow(int row, int[] pixels) {
+    // Send a strip of pixels to the board
+    private void setStrip(int strip, int[] pixels, int powerLimitMultiplierPercent) {
 
-        int [] dimPixels = new int [pixels.length];
+        //Log.d(TAG, "flushPixels raw row:" + strip + "," + Util.intToHex(pixels));
+
+        int[] dimPixels = new int[pixels.length];
+        Log.d(TAG, "powerlimit set to " + powerLimitMultiplierPercent + "%");
         for (int pixel = 0; pixel < pixels.length; pixel++) {
             dimPixels[pixel] =
-                    (mDimmerLevel * pixels[pixel]) / 255;
+                    (mDimmerLevel * pixels[pixel]) / 255 * powerLimitMultiplierPercent / 100;
         }
 
-        // Do color correction on display pixels if needed
-        byte [] newPixels = new byte[mScreenWidth * 3];
-        for (int pixel = 0; pixel < mScreenWidth * 3; pixel = pixel + 3) {
+        // Do color correction on burner board display pixels
+        byte [] newPixels = new byte[pixels.length];
+        for (int pixel = 0; pixel < pixels.length; pixel = pixel + 3) {
             newPixels[pixel] = (byte)pixelColorCorrectionRed(dimPixels[pixel]);
             newPixels[pixel + 1] = (byte)pixelColorCorrectionGreen(dimPixels[pixel + 1]);
             newPixels[pixel + 2] = (byte)pixelColorCorrectionBlue(dimPixels[pixel + 2]);
         }
 
-        Log.d(TAG, "flush row:" + row + "," + Util.bytesToHex(newPixels));
+        //newPixels[30]=(byte)128;
+        //newPixels[31]=(byte)128;
+        //newPixels[32]=(byte)128;
+        //newPixels[3]=2;
+        //newPixels[4]=40;
+        //newPixels[5]=2;
+        //newPixels[6]=2;
+        //newPixels[7]=2;
+        //newPixels[8]=40;
+        //newPixels[9]=2;
+        //newPixels[10]=2;
+        //newPixels[11]=40;
 
-        //l("sendCommand: 10,n,...");
+        //Log.d(TAG, "flushPixels row:" + strip + "," + Util.bytesToHex(newPixels));
+
+        //l("sendCommand: 14,n,...");
         synchronized (mSerialConn) {
             if (mListener != null) {
                 mListener.sendCmdStart(10);
-                mListener.sendCmdArg(row);
+                mListener.sendCmdArg(strip);
                 mListener.sendCmdEscArg(newPixels);
                 mListener.sendCmdEnd();
-                return true;
             }
         }
-        return false;
     }
-
-    boolean haveUpdated = false;
-
 
     //    cmdMessenger.attach(BBUpdate, OnUpdate);              // 6
     public boolean update() {
@@ -190,5 +200,44 @@ public class DisplayPanel extends DisplayDriver {
         return false;
     }
 
+
+
+    private void pixelRemap(int x, int y, int stripNo, int stripOffset) {
+        //Log.d(TAG, "PixelRemap: " + x + ", " + y + " " + stripNo + ":" + stripOffset);
+        pixelMap2BoardTable[stripNo][stripOffset] =
+                pixel2Offset(x, y, PIXEL_RED);
+        pixelMap2BoardTable[stripNo][stripOffset + 1] =
+                pixel2Offset(x, y, PIXEL_GREEN);
+        pixelMap2BoardTable[stripNo][stripOffset + 2] =
+                pixel2Offset(x, y, PIXEL_BLUE);
+    }
+
+
+    // Two primary mapping functions
+    static int kStrips = 8;
+    int [][] pixelMap2BoardTable = new int[8][2048];
+    static int kColumsPerStrip = 32;
+
+    private void initpixelMap2Board() {
+
+        for (int x = 0; x < mScreenWidth; x++) {
+            for (int y = 0; y < mScreenHeight; y++) {
+
+                final int subStrip = x % kColumsPerStrip;
+                final int stripNo = x / kColumsPerStrip;
+                final boolean stripUp = subStrip % 2 == 0;
+                int stripOffset;
+
+                if (stripUp) {
+                    stripOffset = subStrip * mScreenHeight + y;
+                } else {
+                    stripOffset = subStrip * mScreenHeight + (mScreenHeight - 1 - y);
+                }
+                pixelRemap(x, y, stripNo, stripOffset * 3);
+            }
+
+        }
+
+    }
 
 }
