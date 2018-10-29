@@ -1,7 +1,10 @@
 package com.pino.pino;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.util.Log;
+
+import java.nio.IntBuffer;
 
 public class DisplayWS2811Matrix extends DisplayDriver {
 
@@ -14,6 +17,9 @@ public class DisplayWS2811Matrix extends DisplayDriver {
         mScreenHeight = height;
         mScreenType = "Panel Screen";
         Log.d(TAG, "DisplayDriver Panel initting...");
+        mBitmap = Bitmap.createBitmap(mScreenWidth, mScreenHeight, Bitmap.Config.ARGB_8888);
+        mCanvas.setBitmap(mBitmap);
+        mScreenBuffer = IntBuffer.allocate(width * height);
         mOutputScreen = new int[mScreenWidth * mScreenHeight * 3];
         mContext = context;
         initPixelOffset();

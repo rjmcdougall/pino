@@ -65,9 +65,6 @@ public class DisplayDriver {
 
         // Setup bitmap behind canvas
         mCanvas = new Canvas();
-        mBitmap = Bitmap.createBitmap(mScreenWidth, mScreenHeight, Bitmap.Config.ARGB_8888);
-        mCanvas.setBitmap(mBitmap);
-        mScreenBuffer = IntBuffer.allocate(width * height);
 
     }
 

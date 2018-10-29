@@ -1,34 +1,47 @@
 package com.pino.pino;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.util.Log;
 
 import com.pino.pino.DisplayDriver;
 
 import java.nio.IntBuffer;
+import android.graphics.Matrix;
 
 public class DisplayPanel extends DisplayDriver {
 
     private static final String TAG = "Pino.DisplayPanel";
     private int mDimmerLevel = 255;
+    private int mPanelWidth;
+    private int mPanelHeight;
 
     public DisplayPanel(Context context, int width, int height) {
         super(context, width, height);
         mScreenWidth = width;
         mScreenHeight = height;
+        mPanelWidth = height;
+        mPanelHeight = width;
         mScreenType = "Panel Screen";
         Log.d(TAG, "DisplayDriver Panel initting...");
         mOutputScreen = new int[mScreenWidth * mScreenHeight * 3];
         mContext = context;
+        mBitmap = Bitmap.createBitmap(mScreenWidth, mScreenHeight, Bitmap.Config.ARGB_8888);
+        mCanvas.setBitmap(mBitmap);
+        //mCanvas.rotate(-90, mScreenHeight / 2, mScreenWidth / 2);
+        mScreenBuffer = IntBuffer.allocate(width * height);
         initPixelOffset();
         initUsb();
 
     }
 
     public void render() {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(90);
         if (mScreenBuffer != null) {
             mScreenBuffer.rewind();
-            mBitmap.copyPixelsToBuffer(mScreenBuffer);
+            Bitmap rotated = Bitmap.createBitmap(mBitmap, 0, 0, mScreenWidth, mScreenHeight, matrix, true);
+            rotated.copyPixelsToBuffer(mScreenBuffer);
         }
         aRGBtoBoardScreen(mScreenBuffer, mOutputScreen);
         flush();
@@ -36,7 +49,7 @@ public class DisplayPanel extends DisplayDriver {
 
     // Convert from xy to buffer memory
     int pixel2OffsetCalc(int x, int y, int rgb) {
-        return (y * mScreenWidth + x) * 3 + rgb;
+        return (y * mPanelWidth + x) * 3 + rgb;
     }
 
 
@@ -51,8 +64,8 @@ public class DisplayPanel extends DisplayDriver {
     static int[][][] pixel2OffsetTable = new int[255][255][3];
 
     private void initPixelOffset() {
-        for (int x = 0; x < mScreenWidth; x++) {
-            for (int y = 0; y < mScreenHeight; y++) {
+        for (int x = 0; x < mPanelWidth; x++) {
+            for (int y = 0; y < mPanelHeight; y++) {
                 for (int rgb = 0; rgb < 3; rgb++) {
                     pixel2OffsetTable[x][y][rgb] = pixel2OffsetCalc(x, y, rgb);
                 }
@@ -113,16 +126,16 @@ public class DisplayPanel extends DisplayDriver {
         final int powerPercent = totalBrightnessSum / mOutputScreen.length * 100 / 255;
         powerLimitMultiplierPercent = 100 - java.lang.Math.max(powerPercent - 15, 0);
 
-        int[] rowPixels = new int[mScreenWidth * 3];
-        for (int y = 0; y < mScreenHeight; y++) {
+        int[] rowPixels = new int[mPanelWidth * 3];
+        for (int y = 0; y < mPanelHeight; y++) {
             //for (int y = 30; y < 31; y++) {
-            for (int x = 0; x < mScreenWidth; x++) {
-                if (y < mScreenHeight) {
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 0] =
+            for (int x = 0; x < mPanelWidth; x++) {
+                if (y < mPanelHeight) {
+                    rowPixels[(mPanelWidth - 1 - x) * 3 + 0] =
                             mOutputScreen[pixel2Offset(x, y, PIXEL_RED)];
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 1] =
+                    rowPixels[(mPanelWidth - 1 - x) * 3 + 1] =
                             mOutputScreen[pixel2Offset(x, y, PIXEL_GREEN)];
-                    rowPixels[(mScreenWidth - 1 - x) * 3 + 2] =
+                    rowPixels[(mPanelWidth - 1 - x) * 3 + 2] =
                             mOutputScreen[pixel2Offset(x, y, PIXEL_BLUE)];
                 }
             }
@@ -144,8 +157,8 @@ public class DisplayPanel extends DisplayDriver {
         }
 
         // Do color correction on display pixels if needed
-        byte [] newPixels = new byte[mScreenWidth * 3];
-        for (int pixel = 0; pixel < mScreenWidth * 3; pixel = pixel + 3) {
+        byte [] newPixels = new byte[mPanelWidth * 3];
+        for (int pixel = 0; pixel < mPanelWidth * 3; pixel = pixel + 3) {
             newPixels[pixel] = (byte)pixelColorCorrectionRed(dimPixels[pixel]);
             newPixels[pixel + 1] = (byte)pixelColorCorrectionGreen(dimPixels[pixel + 1]);
             newPixels[pixel + 2] = (byte)pixelColorCorrectionBlue(dimPixels[pixel + 2]);

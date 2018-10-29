@@ -28,10 +28,10 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         if (mDisplay == null) {
-            // WS2811 matrix
-            mDisplay = new DisplayWS2811Matrix(mContext, 32, 8);
-            // HUB75 Matrix
-            //mDisplay = new DisplayPanel(mContext, 64, 32);
+            // WS2811 matrix on Teensy Driver
+            //mDisplay = new DisplayWS2811Matrix(mContext, 32, 8);
+            // HUB75 Matrix on Teensy Driver
+            mDisplay = new DisplayPanel(mContext, 64, 32);
 
         }
 
@@ -47,7 +47,7 @@ public class MainActivity extends Activity {
             return;
         }
         Canvas canvas = mDisplay.getCanvas();
-        canvas.drawColor(Color.argb(255, 0, 10, 10));
+        canvas.drawColor(Color.argb(255, 0, 50, 50));
         mDisplay.render();
     }
 
@@ -58,10 +58,16 @@ public class MainActivity extends Activity {
         }
         Canvas canvas = mDisplay.getCanvas();
         Bitmap image =  BitmapFactory.decodeResource(getResources(), R.drawable.pino_frown);
-        Paint paint = new Paint();
+
+        /*
         canvas.drawBitmap(image, null,
                 new RectF(mDisplay.getScreenWidth() / 4, 0,
                         mDisplay.getScreenWidth() * 3 / 4,
+                        mDisplay.getScreenHeight()), null);
+                        */
+        canvas.drawBitmap(image, null,
+                new RectF(0, 0,
+                        mDisplay.getScreenWidth(),
                         mDisplay.getScreenHeight()), null);
         mDisplay.render();
     }
@@ -73,7 +79,7 @@ public class MainActivity extends Activity {
         }
         Canvas canvas = mDisplay.getCanvas();
         Paint arcPaint = new Paint();
-        arcPaint.setColor(Color.argb(255, 0, 10, 10)); //  Color
+        arcPaint.setColor(Color.argb(255, 0, 50, 50)); //  Color
         arcPaint.setStrokeWidth(1);
         arcPaint.setStyle(Paint.Style.STROKE);
         int left = 0;
@@ -88,7 +94,7 @@ public class MainActivity extends Activity {
     }
 
     // A simple demo function to write text
-    private static final int kTextSize = 8;
+    private static final int kTextSize = 18;
     private void drawHello() {
         if (mDisplay == null) {
             return;
@@ -97,7 +103,7 @@ public class MainActivity extends Activity {
         Paint textPaint = new TextPaint();
         textPaint.setDither(true);
         textPaint.setTextAlign(Paint.Align.CENTER);
-        textPaint.setColor(Color.argb(100, 10, 10, 10)); // Text Color
+        textPaint.setColor(Color.argb(255, 50, 50, 50)); // Text Color
         textPaint.setTextSize(kTextSize); // Text Size
         canvas.drawText("Pino",
                 (mDisplay.getScreenWidth() / 2),
