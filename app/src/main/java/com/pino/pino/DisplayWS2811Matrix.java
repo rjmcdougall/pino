@@ -145,7 +145,7 @@ public class DisplayWS2811Matrix extends DisplayDriver {
         //Log.d(TAG, "flushPixels raw row:" + strip + "," + Util.intToHex(pixels));
 
         int[] dimPixels = new int[pixels.length];
-        Log.d(TAG, "powerlimit set to " + powerLimitMultiplierPercent + "%");
+        //Log.d(TAG, "powerlimit set to " + powerLimitMultiplierPercent + "%");
         for (int pixel = 0; pixel < pixels.length; pixel++) {
             dimPixels[pixel] =
                     (mDimmerLevel * pixels[pixel]) / 255 * powerLimitMultiplierPercent / 100;

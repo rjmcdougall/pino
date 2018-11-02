@@ -25,4 +25,9 @@ dependencies {
     androidTestImplementation 'com.android.support.test:runner:1.0.1'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
     compileOnly 'com.google.android.things:androidthings:+'
+    implementation project(':aars')
+    implementation project(':models')
+    implementation 'com.android.support:appcompat-v7:26.1.0'
+    compile 'org.tensorflow:tensorflow-lite:0.1.7'
+    compile 'com.google.android.things.contrib:driver-voicehat:1.0'
 }
