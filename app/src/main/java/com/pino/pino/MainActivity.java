@@ -8,10 +8,16 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.media.AudioRouting;
+import android.media.AudioFormat;
 import android.speech.tts.Voice;
 import android.text.TextPaint;
 // import the VoiceHat driver
@@ -53,6 +59,10 @@ public class MainActivity extends Activity implements
 
     private static String TAG = "Pino.MainActivity";
 
+    Thread mSetupThread;
+
+    Handler mHandler = new Handler(Looper.getMainLooper());;
+
     // For Pino LED Display
     private Context mContext;
     private DisplayDriver mDisplay = null;
@@ -63,7 +73,7 @@ public class MainActivity extends Activity implements
     private static final String MENU_SEARCH = "menu";
 
     /* Keyword we are looking for to activate menu */
-    private static final String KEYPHRASE = "hey pino";
+    private static final String KEYPHRASE = "wakeup pino";
 
     /* Used to handle permission request */
     private static final int PERMISSIONS_REQUEST_RECORD_AUDIO = 1;
@@ -73,8 +83,21 @@ public class MainActivity extends Activity implements
     private HashMap<String, Integer> captions;
 
     // Pino's voice
-    public TextToSpeech mVoice;
+    PinoVoice mVoice;
 
+    // Audio
+    AudioDeviceInfo mAudioOutputDevice;
+    AudioDeviceInfo mAudioInputDevice;
+
+    Thread mPinoThread = null;
+
+    boolean mSetupFinished = false;
+
+    // UI Elements
+    TextView mCaption;
+    CaptionUpdater mCaptionUpdater;
+    TextView mResult;
+    ResultUpdater mResultUpdater;
 
     @Override
     public void onCreate(Bundle state) {
@@ -82,7 +105,20 @@ public class MainActivity extends Activity implements
 
         Log.d(TAG, "OnCreate");
 
+
         mContext = this.getApplicationContext();
+
+        setContentView(R.layout.activity_main);
+
+        mCaptionUpdater = new CaptionUpdater();
+        mCaption = ((TextView) findViewById(R.id.caption_text));
+
+        mResult = ((TextView) findViewById(R.id.result_text));
+        mResultUpdater = new ResultUpdater();
+
+                // Configure android audio
+        Log.d(TAG, "Setup Audio");
+        setupAudioDevices();
 
         // Setup LED Display and draw sample
         Log.d(TAG, "Setup Display");
@@ -93,39 +129,111 @@ public class MainActivity extends Activity implements
             mDisplay = new DisplayPanel(mContext, 64, 32);
 
         }
-        drawTestGraphic();
 
-        // Configure android audio
-        Log.d(TAG, "Setup Audio");
-        setupAudioDevices();
 
-        // Setup voice
-        Log.d(TAG, "Setup Voice");
-        setupVoice();
-
+        mSetupThread = new Thread((new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // Setup voice
+                    Log.d(TAG, "Setup Voice");
+                    mVoice = new PinoVoice(mContext, AUDIO_FORMAT_OUT_MONO, mAudioOutputDevice);
+                    mVoice.speak("I'm Pino", "impino");
+                    Log.d(TAG, "Setup Voice Recognizer");
+                    Assets assets = new Assets(mContext);
+                    File assetDir = assets.syncAssets();
+                    setupRecognizer(assetDir);
+                    mSetupFinished = true;
+                } catch (Exception e) {
+                    Log.d(TAG, "Setup Voice Recognizer failed");
+                }
+            }
+        }));
 
         // Prepare the data for UI
         captions = new HashMap<>();
         captions.put(KWS_SEARCH, R.string.kws_caption);
         captions.put(WORD_SEARCH, R.string.word_caption);
-        setContentView(R.layout.activity_main);
-        ((TextView) findViewById(R.id.caption_text))
-                .setText("Preparing the recognizer");
+        mCaption.setText("Preparing the recognizer");
 
         // Check if user has given permission to record audio
         int permissionCheck = ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO);
         if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSIONS_REQUEST_RECORD_AUDIO);
-            return;
-        }
+            //return;
+        } else {
         // Recognizer initialization is a time-consuming and it involves IO,
         // so we execute it in async task
-        Log.d(TAG, "Setup Voice Recognizer");
-        new SetupTask(this).execute();
+            //new SetupTask(this).execute();
+            mSetupThread.start();
+        }
 
-        mVoice.speak("I'm feeling happy",
-                TextToSpeech.QUEUE_FLUSH, null, "happy");
+        //mSetupThread.start();
 
+
+        if (mPinoThread == null) {
+            Log.d(TAG, "starting main pino thread");
+            mPinoThread = new Thread(new Runnable() {
+                public void run() {
+                    Thread.currentThread().setName("Pino Thread");
+                    while (true) {
+                        pinoLoop();
+                    }
+                }
+            });
+            mPinoThread.start();
+        } else {
+            Log.d(TAG, "pino thread thread already running");
+        }
+
+
+    }
+
+    private class CaptionUpdater implements Runnable{
+        private String txt;
+        @Override
+        public void run() {
+            mCaption.setText(txt);
+        }
+        public void setText(String txt){
+            this.txt = txt;
+        }
+    }
+
+    private class ResultUpdater implements Runnable{
+        private String txt;
+        @Override
+        public void run() {
+            mResult.setText(txt);
+        }
+        public void setText(String txt){
+            this.txt = txt;
+        }
+    }
+
+
+    private void pinoLoop() {
+        // TODO: wait until voice tts ready
+        try {
+            Thread.sleep(1000);
+        } catch (Exception e) {
+        }
+        Log.d(TAG, "pino thread");
+        Log.d(TAG, "pino speak");
+
+        if (mVoice != null) {
+            mVoice.speak("Test", "test");
+        }
+        Log.d(TAG, "pino display");
+        drawTestImage();
+        if (mSetupFinished == true) {
+            Log.d(TAG, "pino speak to me");
+            if (mVoice != null) {
+                mVoice.speak("Speak to me", "speak2me");
+            }
+            Log.d(TAG, "pino waiting for keyword");
+            switchSearch(KWS_SEARCH);
+        }
     }
 
     private static class SetupTask extends AsyncTask<Void, Void, Exception> {
@@ -147,30 +255,31 @@ public class MainActivity extends Activity implements
         @Override
         protected void onPostExecute(Exception result) {
             if (result != null) {
-                ((TextView) activityReference.get().findViewById(R.id.caption_text))
-                        .setText("Failed to init recognizer " + result);
+                activityReference.get().mCaptionUpdater.setText("Failed to init recognizer " + result);
+                activityReference.get().mHandler.post(activityReference.get().mCaptionUpdater);
+
             } else {
-                TextToSpeech voice = activityReference.get().mVoice;
-                if (voice != null) {
-                    String utteranceId = UUID.randomUUID().toString();
-                    voice.speak("Voice recognition loaded",
-                            TextToSpeech.QUEUE_FLUSH, null, utteranceId);
-                }
-                activityReference.get().switchSearch(KWS_SEARCH);
+                activityReference.get().mSetupFinished = true;
             }
         }
+    }
+
+    private  void setup() {
+
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            @NonNull String[] permissions, @NonNull  int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        Log.d(TAG, "got perms");
 
         if (requestCode == PERMISSIONS_REQUEST_RECORD_AUDIO) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Recognizer initialization is a time-consuming and it involves IO,
                 // so we execute it in async task
-                new SetupTask(this).execute();
+                //new SetupTask(this).execute();
+                mSetupThread.start();
             } else {
                 finish();
             }
@@ -202,8 +311,10 @@ public class MainActivity extends Activity implements
             switchSearch(MENU_SEARCH);
         else if (text.equals(WORD_SEARCH))
             switchSearch(WORD_SEARCH);
-        else
-            ((TextView) findViewById(R.id.result_text)).setText(text);
+        else {
+            mCaptionUpdater.setText(text);
+            mHandler.post(mCaptionUpdater);
+        }
     }
 
     /**
@@ -212,6 +323,8 @@ public class MainActivity extends Activity implements
     @Override
     public void onResult(Hypothesis hypothesis) {
         ((TextView) findViewById(R.id.result_text)).setText("");
+        mResultUpdater.setText("");
+        mHandler.post(mResultUpdater);
         if (hypothesis != null) {
             String text = hypothesis.getHypstr();
             makeText(getApplicationContext(), text, Toast.LENGTH_SHORT).show();
@@ -234,6 +347,7 @@ public class MainActivity extends Activity implements
     private void switchSearch(String searchName) {
         recognizer.stop();
 
+        mVoice.speak("Speak to me", "speak2me");
         // If we are not spotting, start listening with timeout (10000 ms or 10 seconds).
         if (searchName.equals(KWS_SEARCH))
             recognizer.startListening(searchName);
@@ -241,7 +355,8 @@ public class MainActivity extends Activity implements
             recognizer.startListening(searchName, 10000);
 
         String caption = getResources().getString(captions.get(searchName));
-        ((TextView) findViewById(R.id.caption_text)).setText(caption);
+        mCaptionUpdater.setText(caption);
+        mHandler.post(mCaptionUpdater);
     }
 
     private void setupRecognizer(File assetsDir) throws IOException {
@@ -273,7 +388,8 @@ public class MainActivity extends Activity implements
 
     @Override
     public void onError(Exception error) {
-        ((TextView) findViewById(R.id.caption_text)).setText(error.getMessage());
+        mCaptionUpdater.setText(error.getMessage());
+        mHandler.post(mCaptionUpdater);
     }
 
     @Override
@@ -372,66 +488,67 @@ public class MainActivity extends Activity implements
         mDisplay.render();
     }
 
-    private void setupVoice() {
-        mVoice = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
-            @Override
-            public void onInit(int status) {
-                // check for successful instantiation
-                if (status == TextToSpeech.SUCCESS) {
-                    if (mVoice.isLanguageAvailable(Locale.UK) == TextToSpeech.LANG_AVAILABLE)
-                        mVoice.setLanguage(Locale.US);
-                    Log.d(TAG, "Text To Speech ready...");
-                    mVoice.setPitch((float) 0.8);
-                    String utteranceId = UUID.randomUUID().toString();
-                    mVoice.setSpeechRate((float) 0.9);
-                    mVoice.speak("I'm Pino",
-                            TextToSpeech.QUEUE_FLUSH, null, utteranceId);
-                } else if (status == TextToSpeech.ERROR) {
-                    Log.d(TAG, "Sorry! Text To Speech failed...");
-                }
-            }
-        });
-    }
+
+    // Audio constants.
+    private static final int SAMPLE_RATE = 16000;
+    private static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
+    private static final AudioFormat AUDIO_FORMAT_STEREO =
+            new AudioFormat.Builder()
+                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                    .setEncoding(ENCODING)
+                    .setSampleRate(SAMPLE_RATE)
+                    .build();
+
+    // For Pino's voice
+    private static final AudioFormat AUDIO_FORMAT_OUT_MONO =
+            new AudioFormat.Builder()
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(ENCODING)
+                    .setSampleRate(SAMPLE_RATE)
+                    .build();
+
+    // Possibly use for recognizer
+    private static final AudioFormat AUDIO_FORMAT_IN_MONO =
+            new AudioFormat.Builder()
+                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                    .setEncoding(ENCODING)
+                    .setSampleRate(SAMPLE_RATE)
+                    .build();
+    private static final int SAMPLE_BLOCK_SIZE = 1024;
 
     private void setupAudioDevices() {
 
         try {
             Max98357A dac = VoiceHat.openDac();
             dac.setSdMode(Max98357A.SD_MODE_LEFT);
-            dac.setGainSlot(Max98357A.GAIN_SLOT_ENABLE);
+            //dac.setGainSlot(Max98357A.GAIN_SLOT_ENABLE);
+            //dac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
             Log.d(TAG, "Voicehat is setup");
         } catch (Exception e) {
-            Log.d(TAG, "Cannot open Voicehat");
+            Log.d(TAG, "Cannot open Voicehat: " + e.toString());
         }
 
-        AudioDeviceInfo audioOutputDevice = findAudioDevice(AudioManager.GET_DEVICES_OUTPUTS,
+        mAudioOutputDevice = findAudioDevice(AudioManager.GET_DEVICES_OUTPUTS,
                 AudioDeviceInfo.TYPE_BUS);
-        if (audioOutputDevice == null) {
+        if (mAudioOutputDevice == null) {
             Log.e(TAG, "failed to found I2S audio output device, using default");
         }
 
-
-        // Get the AudioManager
-            AudioManager audioManager =
-                    (AudioManager)this.getSystemService(Context.AUDIO_SERVICE);
-
-            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-            int setVolume = (int)((float) maxVolume);
-            audioManager.setStreamVolume (
-                    AudioManager.STREAM_MUSIC,
-                    setVolume,
-                    0);
     }
 
     private AudioDeviceInfo findAudioDevice(int deviceFlag, int deviceType) {
         AudioManager manager = (AudioManager) this.getSystemService(Context.AUDIO_SERVICE);
         AudioDeviceInfo[] adis = manager.getDevices(deviceFlag);
         for (AudioDeviceInfo adi : adis) {
+            Log.d(TAG, "found audio device: " +adi.getId() + ", type: " + adi.getType());
             if (adi.getType() == deviceType) {
                 return adi;
             }
         }
         return null;
     }
+
+
+
 
 }

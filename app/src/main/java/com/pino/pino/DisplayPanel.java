@@ -164,7 +164,7 @@ public class DisplayPanel extends DisplayDriver {
             newPixels[pixel + 2] = (byte)pixelColorCorrectionBlue(dimPixels[pixel + 2]);
         }
 
-        Log.d(TAG, "flush row:" + row + "," + Util.bytesToHex(newPixels));
+        //Log.d(TAG, "flush row:" + row + "," + Util.bytesToHex(newPixels));
 
         //l("sendCommand: 10,n,...");
         synchronized (mSerialConn) {
@@ -179,10 +179,6 @@ public class DisplayPanel extends DisplayDriver {
         return false;
     }
 
-    boolean haveUpdated = false;
-
-
-    //    cmdMessenger.attach(BBUpdate, OnUpdate);              // 6
     public boolean update() {
 
         //l("sendCommand: 5");
