@@ -54,6 +54,7 @@ public class PinoVoice implements TextToSpeech.OnInitListener {
             if (mVoice.isLanguageAvailable(Locale.UK) == TextToSpeech.LANG_AVAILABLE)
                 mVoice.setLanguage(Locale.UK);
             mVoice.setSpeechRate((float) 0.9);
+            speak("I'm Pino", "impino");
             Log.d(TAG, "Text To Speech ready...");
 
         } else if (status == TextToSpeech.ERROR) {

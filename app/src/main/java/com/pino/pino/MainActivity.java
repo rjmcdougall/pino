@@ -127,9 +127,7 @@ public class MainActivity extends Activity implements
             //mDisplay = new DisplayWS2811Matrix(mContext, 32, 8);
             // HUB75 Matrix on Teensy Driver
             mDisplay = new DisplayPanel(mContext, 64, 32);
-
         }
-
 
         mSetupThread = new Thread((new Runnable() {
             @Override
@@ -138,14 +136,14 @@ public class MainActivity extends Activity implements
                     // Setup voice
                     Log.d(TAG, "Setup Voice");
                     mVoice = new PinoVoice(mContext, AUDIO_FORMAT_OUT_MONO, mAudioOutputDevice);
-                    mVoice.speak("I'm Pino", "impino");
                     Log.d(TAG, "Setup Voice Recognizer");
                     Assets assets = new Assets(mContext);
                     File assetDir = assets.syncAssets();
                     setupRecognizer(assetDir);
                     mSetupFinished = true;
+                    switchSearch(KWS_SEARCH);
                 } catch (Exception e) {
-                    Log.d(TAG, "Setup Voice Recognizer failed");
+                    Log.d(TAG, "Setup Voice Recognizer failed: " + e.toString());
                 }
             }
         }));
@@ -218,55 +216,8 @@ public class MainActivity extends Activity implements
             Thread.sleep(1000);
         } catch (Exception e) {
         }
-        Log.d(TAG, "pino thread");
-        Log.d(TAG, "pino speak");
-
-        if (mVoice != null) {
-            mVoice.speak("Test", "test");
-        }
-        Log.d(TAG, "pino display");
-        drawTestImage();
-        if (mSetupFinished == true) {
-            Log.d(TAG, "pino speak to me");
-            if (mVoice != null) {
-                mVoice.speak("Speak to me", "speak2me");
-            }
-            Log.d(TAG, "pino waiting for keyword");
-            switchSearch(KWS_SEARCH);
-        }
     }
 
-    private static class SetupTask extends AsyncTask<Void, Void, Exception> {
-        WeakReference<MainActivity> activityReference;
-        SetupTask(MainActivity activity) {
-            this.activityReference = new WeakReference<>(activity);
-        }
-        @Override
-        protected Exception doInBackground(Void... params) {
-            try {
-                Assets assets = new Assets(activityReference.get());
-                File assetDir = assets.syncAssets();
-                activityReference.get().setupRecognizer(assetDir);
-            } catch (IOException e) {
-                return e;
-            }
-            return null;
-        }
-        @Override
-        protected void onPostExecute(Exception result) {
-            if (result != null) {
-                activityReference.get().mCaptionUpdater.setText("Failed to init recognizer " + result);
-                activityReference.get().mHandler.post(activityReference.get().mCaptionUpdater);
-
-            } else {
-                activityReference.get().mSetupFinished = true;
-            }
-        }
-    }
-
-    private  void setup() {
-
-    }
 
     @Override
     public void onRequestPermissionsResult(int requestCode,
@@ -347,13 +298,14 @@ public class MainActivity extends Activity implements
     private void switchSearch(String searchName) {
         recognizer.stop();
 
-        mVoice.speak("Speak to me", "speak2me");
         // If we are not spotting, start listening with timeout (10000 ms or 10 seconds).
-        if (searchName.equals(KWS_SEARCH))
-            recognizer.startListening(searchName);
-        else
+        if (searchName.equals(KWS_SEARCH)) {
+            mVoice.speak("Speak to me", "speak2me");
+        recognizer.startListening(searchName);
+        } else {
+            mVoice.speak("ok, what next?", "oknext");
             recognizer.startListening(searchName, 10000);
-
+        }
         String caption = getResources().getString(captions.get(searchName));
         mCaptionUpdater.setText(caption);
         mHandler.post(mCaptionUpdater);
@@ -363,12 +315,13 @@ public class MainActivity extends Activity implements
         // The recognizer can be configured to perform multiple searches
         // of different kind and switch between them
 
-        recognizer = SpeechRecognizerSetup.defaultSetup()
+        recognizer = SpeechRecognizerSetup.defaultSetup(mContext)
                 .setAcousticModel(new File(assetsDir, "en-us-ptm"))
                 .setDictionary(new File(assetsDir, "cmudict-en-us.dict"))
                 .setRawLogDir(assetsDir) // To disable logging of raw audio comment out this call (takes a lot of space on the device)
                 .getRecognizer();
         recognizer.addListener(this);
+        //.setSampleRate(48000)  // Experiment
 
         /* In your application you might not need to add all those searches.
           They are added here for demonstration. You can leave just one.
@@ -397,25 +350,7 @@ public class MainActivity extends Activity implements
         switchSearch(KWS_SEARCH);
     }
 
-    protected void onCreateOld(Bundle savedInstanceState) {
-         mContext = this.getApplicationContext();
 
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-
-        if (mDisplay == null) {
-            // WS2811 matrix on Teensy Driver
-            //mDisplay = new DisplayWS2811Matrix(mContext, 32, 8);
-            // HUB75 Matrix on Teensy Driver
-            mDisplay = new DisplayPanel(mContext, 64, 32);
-
-        }
-
-        //drawTestFill();
-        //drawHello();
-        drawTestImage();
-        //drawTestGraphic();
-    }
 
     // A simple demo function to draw an image
     private void drawTestFill() {
@@ -533,6 +468,11 @@ public class MainActivity extends Activity implements
         if (mAudioOutputDevice == null) {
             Log.e(TAG, "failed to found I2S audio output device, using default");
         }
+        mAudioInputDevice = findAudioDevice(AudioManager.GET_DEVICES_INPUTS,
+                AudioDeviceInfo.TYPE_BUS);
+        if (mAudioInputDevice == null) {
+            Log.e(TAG, "failed to found I2S audio input device, using default");
+        }
 
     }
 
@@ -540,7 +480,7 @@ public class MainActivity extends Activity implements
         AudioManager manager = (AudioManager) this.getSystemService(Context.AUDIO_SERVICE);
         AudioDeviceInfo[] adis = manager.getDevices(deviceFlag);
         for (AudioDeviceInfo adi : adis) {
-            Log.d(TAG, "found audio device: " +adi.getId() + ", type: " + adi.getType());
+            Log.d(TAG, "found audio device: " + adi.getChannelMasks() + ", type: " + adi.getType());
             if (adi.getType() == deviceType) {
                 return adi;
             }
