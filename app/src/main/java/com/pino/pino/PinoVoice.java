@@ -3,12 +3,14 @@ package com.pino.pino;
 import android.content.Context;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
-import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.media.MediaPlayer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
+
+import com.google.android.things.contrib.driver.voicehat.Max98357A;
+import com.google.android.things.contrib.driver.voicehat.VoiceHat;
 
 import java.io.DataInputStream;
 import java.io.File;
@@ -16,21 +18,18 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Locale;
-import java.util.UUID;
 
 public class PinoVoice implements TextToSpeech.OnInitListener {
 
     String TAG = "PinoVoice";
     private TextToSpeech mVoice;
-    private MediaPlayer mMediaPlayer;
-    private static final String FILE_ID = "file";
-    File mFile;
     String mFilesDir;
     String mFilename;
-    int mBufferSize = 131072;
+    int mBufferSize;
     public AudioTrack mAudioTrack;
     private AudioFormat mAudioFormat;
     private AudioDeviceInfo mDevice;
+    Max98357A mDac;
 
     public PinoVoice(Context context, AudioFormat format, AudioDeviceInfo device) {
 
@@ -42,8 +41,14 @@ public class PinoVoice implements TextToSpeech.OnInitListener {
         mFilename = mFilesDir + "/" + "tts.wav";
         mBufferSize = AudioTrack.getMinBufferSize(format.getSampleRate()
                 , format.getChannelMask(), format.getEncoding());
-
-
+        try {
+            mDac = VoiceHat.openDac();
+            //dac.setGainSlot(Max98357A.GAIN_SLOT_ENABLE);
+            mDac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
+            Log.d(TAG, "Voicehat is setup");
+        } catch (Exception e) {
+            Log.d(TAG, "Cannot open Voicehat: " + e.toString());
+        }
     }
 
     @Override
@@ -92,6 +97,8 @@ public class PinoVoice implements TextToSpeech.OnInitListener {
                         if (mDevice != null) {
                             mAudioTrack.setPreferredDevice(mDevice);
                         }
+                        // Enable Speaker
+                        mDac.setSdMode(Max98357A.SD_MODE_LEFT);
                         mAudioTrack.play();
                         while ((bytesRead = dataInputStream.read(buffer, 0, mBufferSize)) > -1) {
                             mAudioTrack.write(buffer, 0, bytesRead);
@@ -100,6 +107,8 @@ public class PinoVoice implements TextToSpeech.OnInitListener {
                         mAudioTrack.release();
                         dataInputStream.close();
                         fileInputStream.close();
+                        // Mute speaker
+                        mDac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
 
                     } catch (FileNotFoundException e) {
                         Log.e(TAG, "file not found");

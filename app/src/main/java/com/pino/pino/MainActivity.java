@@ -8,30 +8,20 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
-import android.media.AudioTrack;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.tts.TextToSpeech;
-import android.media.AudioRouting;
 import android.media.AudioFormat;
-import android.speech.tts.Voice;
 import android.text.TextPaint;
-// import the VoiceHat driver
-import com.google.android.things.contrib.driver.voicehat.Max98357A;
-import com.google.android.things.contrib.driver.voicehat.VoiceHat;
+
 
 /**
  * Skeleton of Pino app
  */
 import android.Manifest;
-import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.os.AsyncTask;
-import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -41,10 +31,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.ref.WeakReference;
 import java.util.HashMap;
-import java.util.Locale;
-import java.util.UUID;
 
 import edu.cmu.pocketsphinx.Assets;
 import edu.cmu.pocketsphinx.Hypothesis;
@@ -58,13 +45,13 @@ public class MainActivity extends Activity implements
         RecognitionListener {
 
     private static String TAG = "Pino.MainActivity";
+    private Context mContext;
 
     Thread mSetupThread;
 
     Handler mHandler = new Handler(Looper.getMainLooper());;
 
     // For Pino LED Display
-    private Context mContext;
     private DisplayDriver mDisplay = null;
 
     /* Named searches allow to quickly reconfigure the decoder */
@@ -86,8 +73,7 @@ public class MainActivity extends Activity implements
     PinoVoice mVoice;
 
     // Audio
-    AudioDeviceInfo mAudioOutputDevice;
-    AudioDeviceInfo mAudioInputDevice;
+    AudioDevices mAudioDevices;
 
     Thread mPinoThread = null;
 
@@ -95,9 +81,8 @@ public class MainActivity extends Activity implements
 
     // UI Elements
     TextView mCaption;
-    CaptionUpdater mCaptionUpdater;
     TextView mResult;
-    ResultUpdater mResultUpdater;
+    UIUpdater mUIUpdater;
 
     @Override
     public void onCreate(Bundle state) {
@@ -110,15 +95,18 @@ public class MainActivity extends Activity implements
 
         setContentView(R.layout.activity_main);
 
-        mCaptionUpdater = new CaptionUpdater();
+        // Text elements on UI and the updater
+        mUIUpdater = new UIUpdater();
         mCaption = ((TextView) findViewById(R.id.caption_text));
-
         mResult = ((TextView) findViewById(R.id.result_text));
-        mResultUpdater = new ResultUpdater();
+        // Prepare the data for UI
+        captions = new HashMap<>();
+        captions.put(KWS_SEARCH, R.string.kws_caption);
+        captions.put(WORD_SEARCH, R.string.word_caption);
 
-                // Configure android audio
+        // Configure android audio
         Log.d(TAG, "Setup Audio");
-        setupAudioDevices();
+        mAudioDevices = new AudioDevices(mContext);
 
         // Setup LED Display and draw sample
         Log.d(TAG, "Setup Display");
@@ -129,14 +117,20 @@ public class MainActivity extends Activity implements
             mDisplay = new DisplayPanel(mContext, 64, 32);
         }
 
+        // Setup Recognizer in a separate thread because it hogs the main Android thread
+        // too long and stalls other services (like the text2speech)
         mSetupThread = new Thread((new Runnable() {
             @Override
             public void run() {
                 try {
                     // Setup voice
                     Log.d(TAG, "Setup Voice");
-                    mVoice = new PinoVoice(mContext, AUDIO_FORMAT_OUT_MONO, mAudioOutputDevice);
+                    mVoice = new PinoVoice(mContext, AudioDevices.AUDIO_FORMAT_OUT_MONO,
+                            mAudioDevices.getOutputDevice());
                     Log.d(TAG, "Setup Voice Recognizer");
+                    mUIUpdater.setCaption("Preparing the recognizer");
+                    mHandler.post(mUIUpdater);
+
                     Assets assets = new Assets(mContext);
                     File assetDir = assets.syncAssets();
                     setupRecognizer(assetDir);
@@ -144,20 +138,18 @@ public class MainActivity extends Activity implements
                     switchSearch(KWS_SEARCH);
                 } catch (Exception e) {
                     Log.d(TAG, "Setup Voice Recognizer failed: " + e.toString());
+                    mUIUpdater.setCaption("Setup Voice Recognizer failed");
+                    mHandler.post(mUIUpdater);
                 }
             }
         }));
 
-        // Prepare the data for UI
-        captions = new HashMap<>();
-        captions.put(KWS_SEARCH, R.string.kws_caption);
-        captions.put(WORD_SEARCH, R.string.word_caption);
-        mCaption.setText("Preparing the recognizer");
-
         // Check if user has given permission to record audio
-        int permissionCheck = ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO);
+        int permissionCheck =
+                ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO);
         if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSIONS_REQUEST_RECORD_AUDIO);
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSIONS_REQUEST_RECORD_AUDIO);
             //return;
         } else {
         // Recognizer initialization is a time-consuming and it involves IO,
@@ -165,9 +157,6 @@ public class MainActivity extends Activity implements
             //new SetupTask(this).execute();
             mSetupThread.start();
         }
-
-        //mSetupThread.start();
-
 
         if (mPinoThread == null) {
             Log.d(TAG, "starting main pino thread");
@@ -183,33 +172,29 @@ public class MainActivity extends Activity implements
         } else {
             Log.d(TAG, "pino thread thread already running");
         }
-
-
     }
 
-    private class CaptionUpdater implements Runnable{
-        private String txt;
+
+    // Runnable because we need to update UI elements from the main app thread
+    // and the UI gets updated from the recognizer
+    private class UIUpdater implements Runnable {
+        private String caption;
+        private String result;
+
         @Override
         public void run() {
-            mCaption.setText(txt);
+            mCaption.setText(caption);
+            mResult.setText(result);
         }
-        public void setText(String txt){
-            this.txt = txt;
+        public void setCaption(String txt){
+            this.caption = txt;
         }
-    }
-
-    private class ResultUpdater implements Runnable{
-        private String txt;
-        @Override
-        public void run() {
-            mResult.setText(txt);
-        }
-        public void setText(String txt){
-            this.txt = txt;
+        public void setResult(String txt){
+            this.result = txt;
         }
     }
 
-
+    // Not currently doing anything
     private void pinoLoop() {
         // TODO: wait until voice tts ready
         try {
@@ -228,8 +213,7 @@ public class MainActivity extends Activity implements
         if (requestCode == PERMISSIONS_REQUEST_RECORD_AUDIO) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Recognizer initialization is a time-consuming and it involves IO,
-                // so we execute it in async task
-                //new SetupTask(this).execute();
+                // so we execute it in async thread
                 mSetupThread.start();
             } else {
                 finish();
@@ -257,14 +241,18 @@ public class MainActivity extends Activity implements
         if (hypothesis == null)
             return;
 
+        Log.d(TAG, "Partial result: " + hypothesis);
         String text = hypothesis.getHypstr();
+        mVoice.speak("I heard partial  " + text, "partial" + text);
+
+        text = hypothesis.getHypstr();
         if (text.equals(KEYPHRASE))
             switchSearch(MENU_SEARCH);
         else if (text.equals(WORD_SEARCH))
             switchSearch(WORD_SEARCH);
         else {
-            mCaptionUpdater.setText(text);
-            mHandler.post(mCaptionUpdater);
+            mUIUpdater.setResult(text);
+            mHandler.post(mUIUpdater);
         }
     }
 
@@ -274,10 +262,11 @@ public class MainActivity extends Activity implements
     @Override
     public void onResult(Hypothesis hypothesis) {
         ((TextView) findViewById(R.id.result_text)).setText("");
-        mResultUpdater.setText("");
-        mHandler.post(mResultUpdater);
+        mUIUpdater.setResult("");
+        mHandler.post(mUIUpdater);
         if (hypothesis != null) {
             String text = hypothesis.getHypstr();
+            mVoice.speak("I heard you say " + text, "result" + text);
             makeText(getApplicationContext(), text, Toast.LENGTH_SHORT).show();
         }
     }
@@ -301,27 +290,29 @@ public class MainActivity extends Activity implements
         // If we are not spotting, start listening with timeout (10000 ms or 10 seconds).
         if (searchName.equals(KWS_SEARCH)) {
             mVoice.speak("Speak to me", "speak2me");
-        recognizer.startListening(searchName);
+            recognizer.startListening(searchName);
         } else {
             mVoice.speak("ok, what next?", "oknext");
             recognizer.startListening(searchName, 10000);
         }
         String caption = getResources().getString(captions.get(searchName));
-        mCaptionUpdater.setText(caption);
-        mHandler.post(mCaptionUpdater);
+        mUIUpdater.setCaption(caption);
+        mHandler.post(mUIUpdater);
     }
 
     private void setupRecognizer(File assetsDir) throws IOException {
         // The recognizer can be configured to perform multiple searches
         // of different kind and switch between them
 
+        // TODO: Change the regognizer to accept an AudioDeviceInfo instead
+        // NOTE: you must pull the new  pocketsphinx aar from pino git aars that has new args
         recognizer = SpeechRecognizerSetup.defaultSetup(mContext)
                 .setAcousticModel(new File(assetsDir, "en-us-ptm"))
                 .setDictionary(new File(assetsDir, "cmudict-en-us.dict"))
                 .setRawLogDir(assetsDir) // To disable logging of raw audio comment out this call (takes a lot of space on the device)
+                //.setSampleRate(48000)  // Experiment
                 .getRecognizer();
         recognizer.addListener(this);
-        //.setSampleRate(48000)  // Experiment
 
         /* In your application you might not need to add all those searches.
           They are added here for demonstration. You can leave just one.
@@ -341,12 +332,15 @@ public class MainActivity extends Activity implements
 
     @Override
     public void onError(Exception error) {
-        mCaptionUpdater.setText(error.getMessage());
-        mHandler.post(mCaptionUpdater);
+        mUIUpdater.setCaption(error.getMessage());
+        mHandler.post(mUIUpdater);
+        Log.d(TAG, "Recognizer Error: " + error.getMessage());
+        mVoice.speak("Recognizer Error ", "error");
     }
 
     @Override
     public void onTimeout() {
+        Log.d(TAG, "Recognizer timeout: ");
         switchSearch(KWS_SEARCH);
     }
 
@@ -422,73 +416,5 @@ public class MainActivity extends Activity implements
                 textPaint);
         mDisplay.render();
     }
-
-
-    // Audio constants.
-    private static final int SAMPLE_RATE = 16000;
-    private static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
-    private static final AudioFormat AUDIO_FORMAT_STEREO =
-            new AudioFormat.Builder()
-                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                    .setEncoding(ENCODING)
-                    .setSampleRate(SAMPLE_RATE)
-                    .build();
-
-    // For Pino's voice
-    private static final AudioFormat AUDIO_FORMAT_OUT_MONO =
-            new AudioFormat.Builder()
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .setEncoding(ENCODING)
-                    .setSampleRate(SAMPLE_RATE)
-                    .build();
-
-    // Possibly use for recognizer
-    private static final AudioFormat AUDIO_FORMAT_IN_MONO =
-            new AudioFormat.Builder()
-                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .setEncoding(ENCODING)
-                    .setSampleRate(SAMPLE_RATE)
-                    .build();
-    private static final int SAMPLE_BLOCK_SIZE = 1024;
-
-    private void setupAudioDevices() {
-
-        try {
-            Max98357A dac = VoiceHat.openDac();
-            dac.setSdMode(Max98357A.SD_MODE_LEFT);
-            //dac.setGainSlot(Max98357A.GAIN_SLOT_ENABLE);
-            //dac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
-            Log.d(TAG, "Voicehat is setup");
-        } catch (Exception e) {
-            Log.d(TAG, "Cannot open Voicehat: " + e.toString());
-        }
-
-        mAudioOutputDevice = findAudioDevice(AudioManager.GET_DEVICES_OUTPUTS,
-                AudioDeviceInfo.TYPE_BUS);
-        if (mAudioOutputDevice == null) {
-            Log.e(TAG, "failed to found I2S audio output device, using default");
-        }
-        mAudioInputDevice = findAudioDevice(AudioManager.GET_DEVICES_INPUTS,
-                AudioDeviceInfo.TYPE_BUS);
-        if (mAudioInputDevice == null) {
-            Log.e(TAG, "failed to found I2S audio input device, using default");
-        }
-
-    }
-
-    private AudioDeviceInfo findAudioDevice(int deviceFlag, int deviceType) {
-        AudioManager manager = (AudioManager) this.getSystemService(Context.AUDIO_SERVICE);
-        AudioDeviceInfo[] adis = manager.getDevices(deviceFlag);
-        for (AudioDeviceInfo adi : adis) {
-            Log.d(TAG, "found audio device: " + adi.getChannelMasks() + ", type: " + adi.getType());
-            if (adi.getType() == deviceType) {
-                return adi;
-            }
-        }
-        return null;
-    }
-
-
-
 
 }
