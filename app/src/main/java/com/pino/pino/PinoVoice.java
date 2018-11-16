@@ -98,18 +98,18 @@ public class PinoVoice implements TextToSpeech.OnInitListener {
                             mAudioTrack.setPreferredDevice(mDevice);
                         }
                         // Enable Speaker
-                        mDac.setSdMode(Max98357A.SD_MODE_LEFT);
                         mAudioTrack.play();
+                        mDac.setSdMode(Max98357A.SD_MODE_LEFT);
                         while ((bytesRead = dataInputStream.read(buffer, 0, mBufferSize)) > -1) {
                             mAudioTrack.write(buffer, 0, bytesRead);
                         }
+                        mAudioTrack.flush();
+                        // Mute speaker
+                        mDac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
                         mAudioTrack.stop();
                         mAudioTrack.release();
                         dataInputStream.close();
                         fileInputStream.close();
-                        // Mute speaker
-                        mDac.setSdMode(Max98357A.SD_MODE_SHUTDOWN);
-
                     } catch (FileNotFoundException e) {
                         Log.e(TAG, "file not found");
                     } catch (IOException e) {
